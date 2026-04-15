@@ -1,0 +1,185 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #07101f;
+  color: #dde6f0;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1); opacity: 0.65; }
+  50% { transform: scale(1.07); opacity: 1; }
+}
+
+@keyframes orbIn {
+  0%   { transform: scale(0.82); opacity: 0.4; box-shadow: 0 0 30px rgba(94,207,202,0.15); }
+  100% { transform: scale(1.32); opacity: 1;   box-shadow: 0 0 110px rgba(94,207,202,0.55); }
+}
+
+@keyframes orbHold {
+  0%, 100% { transform: scale(1.32); opacity: 1;   box-shadow: 0 0 110px rgba(94,207,202,0.55); }
+  50%       { transform: scale(1.34); opacity: 1;   box-shadow: 0 0 130px rgba(94,207,202,0.65); }
+}
+
+@keyframes orbOut {
+  0%   { transform: scale(1.32); opacity: 1;   box-shadow: 0 0 110px rgba(94,207,202,0.55); }
+  100% { transform: scale(0.82); opacity: 0.4; box-shadow: 0 0 30px rgba(94,207,202,0.15); }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes rotateSlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes bgShift {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+
+@keyframes labelFade {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.97); }
+  15%  { opacity: 1; transform: translateY(0)  scale(1); }
+  85%  { opacity: 1; transform: translateY(0)  scale(1); }
+  100% { opacity: 0; transform: translateY(-6px) scale(0.97); }
+}
+
+.tab-enter {
+  animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(94,207,202,0.1);
+  border-radius: 16px;
+  padding: 24px;
+  transition: border-color 0.25s ease;
+}
+
+.card:hover {
+  border-color: rgba(94,207,202,0.2);
+}
+
+.nav-pill {
+  padding: 7px 15px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.015em;
+  transition: all 0.2s ease;
+  color: #6b8a9e;
+  white-space: nowrap;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+.nav-pill:hover {
+  color: #dde6f0;
+  background: rgba(94,207,202,0.07);
+}
+
+.nav-pill.active {
+  color: #5ecfca;
+  background: rgba(94,207,202,0.12);
+}
+
+.btn-primary {
+  padding: 13px 36px;
+  border-radius: 50px;
+  background: #5ecfca;
+  color: #07101f;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #7addd8;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(94,207,202,0.3);
+}
+
+.btn-ghost {
+  padding: 13px 36px;
+  border-radius: 50px;
+  background: transparent;
+  color: #5ecfca;
+  border: 1px solid rgba(94,207,202,0.28);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  background: rgba(94,207,202,0.08);
+  border-color: rgba(94,207,202,0.5);
+}
+
+.quiz-opt {
+  display: block;
+  width: 100%;
+  padding: 15px 22px;
+  border-radius: 12px;
+  border: 1px solid rgba(94,207,202,0.14);
+  background: rgba(255,255,255,0.03);
+  color: #c8dde8;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  text-align: left;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.quiz-opt:hover {
+  background: rgba(94,207,202,0.07);
+  border-color: rgba(94,207,202,0.32);
+  color: #dde6f0;
+}
+
+.cycle-node {
+  transition: all 0.22s ease;
+}
+
+.cycle-node:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+@media (max-width: 600px) {
+  .nav-pill { padding: 6px 11px; font-size: 12px; }
+  .btn-primary, .btn-ghost { padding: 12px 26px; font-size: 13px; }
+}
