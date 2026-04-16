@@ -421,6 +421,18 @@ function useSoundEngine(presetKey, active) {
   const ctxRef   = useRef(null);
   const nodesRef = useRef([]);
 
+  // ⚠️ Call this DIRECTLY in a click handler before any setState call.
+  // iOS & Chrome block AudioContext creation/resume unless it happens
+  // synchronously inside a user gesture. useEffect fires after re-render — too late.
+  const wakeAudio = useCallback(() => {
+    try {
+      if (!ctxRef.current || ctxRef.current.state === 'closed') {
+        ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (ctxRef.current.state === 'suspended') ctxRef.current.resume();
+    } catch(_) {}
+  }, []);
+
   const stopAll = useCallback(() => {
     nodesRef.current.forEach(n => { try { n.stop?.(); n.disconnect?.(); } catch(_){} });
     nodesRef.current = [];
@@ -518,7 +530,7 @@ function useSoundEngine(presetKey, active) {
     } catch(_) {}
   }, []);
 
-  return { bell, stopAll };
+  return { bell, stopAll, wakeAudio };
 }
 
 // ─── VOICE GUIDE HOOK ──────────────────────────────────────────────────────
@@ -594,7 +606,7 @@ function useSessionHistory() {
 
 // ─── AUDIO CONTROLS UI ─────────────────────────────────────────────────────
 
-function AudioBar({ voice, sound, onToggleVoice, onToggleSound }) {
+function AudioBar({ voice, sound, onToggleVoice, onToggleSound, onWakeAudio }) {
   return (
     <div style={{ display:'flex', gap:'10px', justifyContent:'center', marginBottom:'20px' }}>
       <button
@@ -611,7 +623,7 @@ function AudioBar({ voice, sound, onToggleVoice, onToggleSound }) {
         <span>Voice {voice?'on':'off'}</span>
       </button>
       <button
-        onClick={onToggleSound}
+        onClick={() => { onWakeAudio?.(); onToggleSound(); }}
         title={sound ? 'Soundscape on — tap to mute' : 'Soundscape off — tap to enable'}
         aria-label={sound ? 'Soundscape playing' : 'Soundscape muted'}
         style={{
@@ -620,7 +632,7 @@ function AudioBar({ voice, sound, onToggleVoice, onToggleSound }) {
           background: sound?'rgba(160,120,240,0.1)':'rgba(255,255,255,0.03)',
           color: sound?'#b07fe0':'#4e6e82', fontSize:'13px', cursor:'pointer', transition:'all 0.2s',
         }}>
-        <span style={{fontSize:'16px'}}>{sound?'🎵':'🎵'}</span>
+        <span style={{fontSize:'16px'}}>🎵</span>
         <span>Sound {sound?'on':'off'}</span>
       </button>
     </div>
@@ -1321,7 +1333,7 @@ function BreatheTab({ logSession }) {
   const [soundOn, setSoundOn] = useState(false);
   const sessionStartRef = useRef(null);
   const { phaseName, phaseLabel, rounds } = usePhaseTimer(GUIDED_PHASES, running);
-  const { bell } = useSoundEngine('breathe', soundOn && running);
+  const { bell, wakeAudio: wakeSound } = useSoundEngine('breathe', soundOn && running);
   const { speak, cancel, enabled: voiceOn, setEnabled: setVoiceOn, available: voiceAvail } = useSpeechGuide();
 
   // Speak phase changes + ring bell
@@ -1373,7 +1385,7 @@ function BreatheTab({ logSession }) {
           <AudioBar
             voice={voiceOn} sound={soundOn}
             onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)}
+            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
           />
         )}
 
@@ -1426,7 +1438,7 @@ function MeditateTab({ logSession }) {
 
   const med = selected ? MEDITATIONS[selected] : null;
   const soundPreset = selected ? MED_SOUNDSCAPE[selected] : null;
-  useSoundEngine(soundPreset, soundOn && running);
+  const { wakeAudio: wakeSound } = useSoundEngine(soundPreset, soundOn && running);
   const { speak, cancel, enabled: voiceOn, setEnabled: setVoiceOn, available: voiceAvail } = useSpeechGuide();
 
   useEffect(() => {
@@ -1493,7 +1505,7 @@ function MeditateTab({ logSession }) {
         {voiceAvail && (
           <AudioBar voice={voiceOn} sound={soundOn}
             onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)} />
+            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
         )}
 
         {/* Ambient orb */}
@@ -1584,7 +1596,7 @@ function AnxietyTab({ logSession }) {
 
   const proto = protocolId ? ANXIETY_PROTOCOLS[protocolId] : null;
   const { phaseName, phaseLabel } = usePhaseTimer(proto ? proto.phases : [], running);
-  useSoundEngine('anxiety', soundOn && running);
+  const { wakeAudio: wakeSound } = useSoundEngine('anxiety', soundOn && running);
   const { speak, cancel, enabled: voiceOn, setEnabled: setVoiceOn, available: voiceAvail } = useSpeechGuide();
 
   // Speak phase changes
@@ -1616,7 +1628,7 @@ function AnxietyTab({ logSession }) {
         {voiceAvail && (
           <AudioBar voice={voiceOn} sound={soundOn}
             onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)} />
+            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
         )}
 
         <div style={{ marginBottom: '16px' }}>
@@ -1737,7 +1749,7 @@ function SleepTab({ logSession }) {
 
   const pattern = patternId ? SLEEP_PATTERNS[patternId] : null;
   const { phaseName, phaseLabel, rounds } = usePhaseTimer(pattern ? pattern.phases : [], running);
-  useSoundEngine('sleep', soundOn && running);
+  const { wakeAudio: wakeSound } = useSoundEngine('sleep', soundOn && running);
   const { speak, cancel, enabled: voiceOn, setEnabled: setVoiceOn, available: voiceAvail } = useSpeechGuide();
 
   // Speak phase changes (whisper-rate for sleep)
@@ -1782,7 +1794,7 @@ function SleepTab({ logSession }) {
           {voiceAvail && dimLevel < 0.2 && (
             <AudioBar voice={voiceOn} sound={soundOn}
               onToggleVoice={() => setVoiceOn(v => !v)}
-              onToggleSound={() => setSoundOn(s => !s)} />
+              onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
           )}
 
           {/* Slow orb */}
