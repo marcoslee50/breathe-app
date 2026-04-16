@@ -607,26 +607,29 @@ function useSessionHistory() {
 
 // ─── AUDIO CONTROLS UI ─────────────────────────────────────────────────────
 
-function AudioBar({ voice, sound, onToggleVoice, onToggleSound, onWakeAudio }) {
+function AudioBar({ voice, sound, onToggleVoice, onToggleSound, onWakeAudio, voiceAvail = true }) {
   return (
     <div style={{ display:'flex', gap:'10px', justifyContent:'center', marginBottom:'20px' }}>
       <button
         onClick={onToggleVoice}
-        title={voice ? 'Voice guidance on — tap to mute' : 'Voice guidance off — tap to enable'}
+        disabled={!voiceAvail}
+        title={!voiceAvail ? 'Voice not available on this browser' : voice ? 'Voice on — tap to mute' : 'Voice off — tap to enable'}
         aria-label={voice ? 'Voice guidance on' : 'Voice guidance off'}
         style={{
           display:'flex', alignItems:'center', gap:'7px', padding:'8px 16px',
-          borderRadius:'20px', border:`1px solid ${voice?'rgba(94,207,202,0.4)':'rgba(255,255,255,0.1)'}`,
-          background: voice?'rgba(94,207,202,0.1)':'rgba(255,255,255,0.03)',
-          color: voice?'#5ecfca':'#4e6e82', fontSize:'13px', cursor:'pointer', transition:'all 0.2s',
+          borderRadius:'20px', border:`1px solid ${voice && voiceAvail ?'rgba(94,207,202,0.4)':'rgba(255,255,255,0.1)'}`,
+          background: voice && voiceAvail ?'rgba(94,207,202,0.1)':'rgba(255,255,255,0.03)',
+          color: voice && voiceAvail ?'#5ecfca': voiceAvail ? '#4e6e82' : '#2a3a48',
+          fontSize:'13px', cursor: voiceAvail ? 'pointer' : 'default', transition:'all 0.2s',
+          opacity: voiceAvail ? 1 : 0.4,
         }}>
-        <span style={{fontSize:'16px'}}>{voice?'🔊':'🔇'}</span>
-        <span>Voice {voice?'on':'off'}</span>
+        <span style={{fontSize:'16px'}}>{voice && voiceAvail ? '🔊':'🔇'}</span>
+        <span>{voiceAvail ? `Voice ${voice ? 'on' : 'off'}` : 'Voice unavailable'}</span>
       </button>
       <button
         onClick={() => { onWakeAudio?.(); onToggleSound(); }}
-        title={sound ? 'Soundscape on — tap to mute' : 'Soundscape off — tap to enable'}
-        aria-label={sound ? 'Soundscape playing' : 'Soundscape muted'}
+        title={sound ? 'Soundscape on — tap to mute' : 'Tap to enable soundscape'}
+        aria-label={sound ? 'Soundscape playing' : 'Soundscape off'}
         style={{
           display:'flex', alignItems:'center', gap:'7px', padding:'8px 16px',
           borderRadius:'20px', border:`1px solid ${sound?'rgba(160,120,240,0.4)':'rgba(255,255,255,0.1)'}`,
@@ -805,7 +808,6 @@ export default function App() {
 // ─── HOME ──────────────────────────────────────────────────────────────────
 
 function HomeTab({ setTab, hist }) {
-  const [goal, setGoal] = useState(null);
   const { totalSessions, totalMinutes, lastScan, streak, history } = hist;
 
   const GOALS = [
@@ -1069,20 +1071,26 @@ function ScanTab({ logScan }) {
   const [bellyResult, setBellyResult] = useState(null);
   const [chestResult, setChestResult] = useState(null);
   const [elapsed, setElapsed] = useState(0);
-  const SCAN_DURATION = 20; // seconds per scan
+  const SCAN_DURATION = 20;
 
   const scanning = (scanPhase === 'belly' || scanPhase === 'chest') && status === 'granted';
   const { rate, amplitude, noSensor, waveRef } = useBreathDetection(scanning);
   const { speak, enabled: voiceOn, setEnabled: setVoiceOn, available: voiceAvail } = useSpeechGuide();
 
+  // Live refs so the timer closure always reads the latest sensor values (stale closure fix)
+  const rateRef      = useRef(null);
+  const amplitudeRef = useRef(0);
+  useEffect(() => { rateRef.current = rate; }, [rate]);
+  useEffect(() => { amplitudeRef.current = amplitude; }, [amplitude]);
+
   // Announce phase changes for eyes-free use
   useEffect(() => {
     if (scanPhase === 'belly') speak('Belly scan starting. Place your phone face-down on your belly, just below your ribcage. Lie still and breathe normally.');
-    if (scanPhase === 'chest')  speak('Belly scan complete. Now move the phone to the centre of your chest, face-down. Stay still and breathe normally.');
-    if (scanPhase === 'done')   speak('Scan complete. Your results are ready.');
+    if (scanPhase === 'chest') speak('Belly scan complete. Now move the phone to the centre of your chest, face-down. Stay still and breathe normally.');
+    if (scanPhase === 'done')  speak('Scan complete. Your results are ready.');
   }, [scanPhase, speak]);
 
-  // Timer for scan phases
+  // Timer — reads from refs to get live sensor values at the moment of completion
   useEffect(() => {
     if (!scanning) return;
     setElapsed(0);
@@ -1090,8 +1098,7 @@ function ScanTab({ logScan }) {
       setElapsed(e => {
         if (e >= SCAN_DURATION - 1) {
           clearInterval(interval);
-          // Save result and move to next phase
-          const result = { rate, amplitude };
+          const result = { rate: rateRef.current, amplitude: amplitudeRef.current };
           if (scanPhase === 'belly') {
             setBellyResult(result);
             setScanPhase('chest');
@@ -1381,14 +1388,12 @@ function BreatheTab({ logSession }) {
           </div>
         </div>
 
-        {/* Audio controls */}
-        {(voiceAvail) && (
-          <AudioBar
-            voice={voiceOn} sound={soundOn}
-            onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
-          />
-        )}
+        {/* Audio controls — always shown */}
+        <AudioBar
+          voice={voiceOn} sound={soundOn}
+          onToggleVoice={() => voiceAvail && setVoiceOn(v => !v)}
+          onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
+          voiceAvail={voiceAvail} />
 
         <div style={{ height: '290px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
           <BreathOrb phaseName={running ? phaseName : 'idle'} size={160} />
@@ -1502,12 +1507,11 @@ function MeditateTab({ logSession }) {
 
     return (
       <div className="tab-enter" style={{ maxWidth: '580px', margin: '0 auto', textAlign: 'center' }}>
-        {/* Audio controls */}
-        {voiceAvail && (
-          <AudioBar voice={voiceOn} sound={soundOn}
-            onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
-        )}
+        {/* Audio controls — always shown; voice button disabled if unavailable */}
+        <AudioBar voice={voiceOn} sound={soundOn}
+          onToggleVoice={() => voiceAvail && setVoiceOn(v => !v)}
+          onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
+          voiceAvail={voiceAvail} />
 
         {/* Ambient orb */}
         <div style={{ height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px' }}>
@@ -1625,12 +1629,11 @@ function AnxietyTab({ logSession }) {
     const calmColor = calmScore >= 60 ? '#5ecfca' : calmScore >= 30 ? '#f0bc4e' : '#e07b6c';
     return (
       <div className="tab-enter" style={{ maxWidth: '560px', margin: '0 auto', textAlign: 'center' }}>
-        {/* Audio controls */}
-        {voiceAvail && (
-          <AudioBar voice={voiceOn} sound={soundOn}
-            onToggleVoice={() => setVoiceOn(v => !v)}
-            onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
-        )}
+        {/* Audio controls — always shown */}
+        <AudioBar voice={voiceOn} sound={soundOn}
+          onToggleVoice={() => voiceAvail && setVoiceOn(v => !v)}
+          onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
+          voiceAvail={voiceAvail} />
 
         <div style={{ marginBottom: '16px' }}>
           <span style={{ fontSize: '11px', color: proto.color + 'bb', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{proto.label}</span>
@@ -1792,10 +1795,11 @@ function SleepTab({ logSession }) {
 
         <div className="tab-enter" style={{ maxWidth: '500px', margin: '0 auto', textAlign: 'center', opacity: Math.max(0.15, screenBrightness) }}>
           {/* Audio controls — fade with screen */}
-          {voiceAvail && dimLevel < 0.2 && (
+          {dimLevel < 0.2 && (
             <AudioBar voice={voiceOn} sound={soundOn}
-              onToggleVoice={() => setVoiceOn(v => !v)}
-              onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound} />
+              onToggleVoice={() => voiceAvail && setVoiceOn(v => !v)}
+              onToggleSound={() => setSoundOn(s => !s)} onWakeAudio={wakeSound}
+              voiceAvail={voiceAvail} />
           )}
 
           {/* Slow orb */}
