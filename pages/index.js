@@ -441,92 +441,93 @@ function useSoundEngine(presetKey, active) {
   useEffect(() => {
     if (!active || !presetKey) { stopAll(); return; }
     const preset = SOUNDSCAPES[presetKey];
-    if (!preset) { stopAll(); return; }
-    try {
-      if (!ctxRef.current || ctxRef.current.state === 'closed') {
-        ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      const ctx = ctxRef.current;
-      if (ctx.state === 'suspended') ctx.resume();
+    if (!preset) return;
+    let cancelled = false;
 
-      const master = ctx.createGain();
-      master.gain.setValueAtTime(0, ctx.currentTime);
-      master.gain.linearRampToValueAtTime(preset.volume, ctx.currentTime + 3);
-      master.connect(ctx.destination);
-      const nodes = [master];
-
-      // Brown noise layer
-      if (preset.brownNoise) {
-        const sr  = ctx.sampleRate;
-        const buf = ctx.createBuffer(1, sr * 4, sr);
-        const d   = buf.getChannelData(0);
-        let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-        for (let i = 0; i < d.length; i++) {
-          const w = Math.random()*2-1;
-          b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
-          b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
-          b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
-          d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+    const start = async () => {
+      try {
+        if (!ctxRef.current || ctxRef.current.state === 'closed') {
+          ctxRef.current = new (window.AudioContext || window.webkitAudioContext)();
         }
-        const src  = ctx.createBufferSource();
-        const gain = ctx.createGain();
-        src.buffer = buf; src.loop = true;
-        gain.gain.value = preset.brownNoise;
-        src.connect(gain); gain.connect(master); src.start();
-        nodes.push(src, gain);
-      }
+        // Await resume — nodes must only be created after the Promise resolves,
+        // otherwise gain values are ignored while context clock is at zero.
+        await ctxRef.current.resume();
+        if (cancelled) return;
+        const ctx = ctxRef.current;
+        if (ctx.state !== 'running') return;
 
-      // Binaural beats (requires headphones; L and R ear slightly detuned)
-      if (preset.binaural) {
-        const { base, beat, vol } = preset.binaural;
-        const splitter = ctx.createChannelSplitter(2);
-        const merger   = ctx.createChannelMerger(2);
-        merger.connect(master);
+        const nodes = [];
+        const master = ctx.createGain();
+        master.gain.value = preset.volume ?? 0.4;
+        master.connect(ctx.destination);
+        nodes.push(master);
 
-        [[base, 0], [base+beat, 1]].forEach(([freq, ch]) => {
-          const osc  = ctx.createOscillator();
+        // ── Brown noise ──────────────────────────────────────────
+        if (preset.brownNoise) {
+          const sr  = ctx.sampleRate;
+          const buf = ctx.createBuffer(1, sr * 3, sr);
+          const d   = buf.getChannelData(0);
+          let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+          for (let i = 0; i < d.length; i++) {
+            const w = Math.random()*2-1;
+            b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+            b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+            b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+            d[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+          }
+          const src  = ctx.createBufferSource();
           const gain = ctx.createGain();
-          osc.frequency.value = freq; osc.type = 'sine';
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 5);
-          osc.connect(gain); gain.connect(merger, 0, ch);
-          osc.start(); nodes.push(osc, gain);
-        });
-        nodes.push(merger);
-      }
+          src.buffer = buf; src.loop = true;
+          gain.gain.value = preset.brownNoise;
+          src.connect(gain); gain.connect(master); src.start();
+          nodes.push(src, gain);
+        }
 
-      // Harmonic drone
-      if (preset.drone) {
-        const { freq, harmonics } = preset.drone;
-        harmonics.forEach(([mult, vol]) => {
-          const osc  = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.frequency.value = freq * mult; osc.type = 'sine';
-          gain.gain.setValueAtTime(0, ctx.currentTime);
-          gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 5);
-          osc.connect(gain); gain.connect(master);
-          osc.start(); nodes.push(osc, gain);
-        });
-      }
+        // ── Binaural beats — StereoPanner (more compatible than ChannelMerger) ──
+        if (preset.binaural && ctx.createStereoPanner) {
+          const { base, beat, vol } = preset.binaural;
+          [[base, -0.9], [base + beat, 0.9]].forEach(([freq, pan]) => {
+            const osc    = ctx.createOscillator();
+            const gain   = ctx.createGain();
+            const panner = ctx.createStereoPanner();
+            osc.type = 'sine'; osc.frequency.value = freq;
+            gain.gain.value = vol; panner.pan.value = pan;
+            osc.connect(gain); gain.connect(panner); panner.connect(master);
+            osc.start(); nodes.push(osc, gain, panner);
+          });
+        }
 
-      nodesRef.current = nodes;
-    } catch(_) {}
-    return stopAll;
+        // ── Harmonic drone ───────────────────────────────────────
+        if (preset.drone) {
+          preset.drone.harmonics.forEach(([mult, vol]) => {
+            const osc  = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine'; osc.frequency.value = preset.drone.freq * mult;
+            gain.gain.value = vol;
+            osc.connect(gain); gain.connect(master); osc.start();
+            nodes.push(osc, gain);
+          });
+        }
+
+        nodesRef.current = nodes;
+      } catch(_) {}
+    };
+
+    start();
+    return () => { cancelled = true; stopAll(); };
   }, [active, presetKey, stopAll]);
 
-  // Bell tone — call on phase transitions (528Hz = Solfeggio "transformation")
+  // Bell tone
   const bell = useCallback(() => {
     try {
       const ctx = ctxRef.current;
-      if (!ctx || ctx.state === 'closed') return;
-      if (ctx.state === 'suspended') ctx.resume();
+      if (!ctx || ctx.state !== 'running') return;
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.frequency.value = 528; osc.type = 'sine';
-      gain.gain.setValueAtTime(0.28, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.2);
+      osc.type = 'sine'; osc.frequency.value = 528;
+      gain.gain.value = 0.25;
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.start(); osc.stop(ctx.currentTime + 2.5);
+      osc.start(); osc.stop(ctx.currentTime + 2);
     } catch(_) {}
   }, []);
 
